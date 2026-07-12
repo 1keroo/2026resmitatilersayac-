@@ -56,6 +56,101 @@
     padding: 0 2rem;
   }
 
+  /* SHIFT COUNTER */
+  .shift-banner {
+    position: relative;
+    z-index: 1;
+    max-width: 700px;
+    margin: 2.5rem auto 0;
+    padding: 2rem 2rem 1.7rem;
+    background: linear-gradient(145deg, var(--dark2), var(--dark3));
+    border: 1px solid rgba(201,168,76,0.25);
+    border-radius: 2px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 40px rgba(201,168,76,0.06);
+  }
+
+  .shift-banner.working {
+    border-color: var(--gold);
+    box-shadow: 0 0 50px rgba(201,168,76,0.18);
+  }
+
+  .shift-eyebrow {
+    font-size: 0.7rem;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--gold-dark);
+    margin-bottom: 0.6rem;
+  }
+
+  .shift-status {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--cream);
+    margin-bottom: 0.3rem;
+  }
+
+  .shift-status.working-text {
+    color: var(--gold);
+    text-shadow: 0 0 20px rgba(201,168,76,0.4);
+  }
+
+  .shift-sub {
+    font-size: 0.8rem;
+    color: rgba(212,201,176,0.5);
+    letter-spacing: 0.05em;
+    margin-bottom: 1.4rem;
+  }
+
+  .shift-sub strong {
+    color: var(--gold);
+    font-weight: 500;
+  }
+
+  .shift-countdown {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+  }
+
+  .scount-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 64px;
+  }
+
+  .scount-val {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.4rem;
+    font-weight: 900;
+    color: var(--cream);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .shift-banner.working .scount-val {
+    color: var(--gold);
+    text-shadow: 0 0 20px rgba(201,168,76,0.5);
+  }
+
+  .scount-label {
+    font-size: 0.62rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(212,201,176,0.4);
+    margin-top: 0.3rem;
+  }
+
+  .scount-sep {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    color: rgba(201,168,76,0.3);
+    align-self: flex-start;
+    margin-top: 0.2rem;
+  }
+
   /* HEADER */
   header {
     text-align: center;
@@ -469,6 +564,13 @@
 <body>
 
 <div class="container">
+  <div class="shift-banner" id="shift-banner">
+    <div class="shift-eyebrow">Mesai Takibi</div>
+    <div class="shift-status" id="shift-status">—</div>
+    <div class="shift-sub" id="shift-sub">—</div>
+    <div class="shift-countdown" id="shift-countdown"></div>
+  </div>
+
   <header>
     <div class="header-ornament">
       <div class="ornament-line"></div>
@@ -636,6 +738,90 @@ function renderAll() {
     grid.appendChild(card);
   });
 }
+
+/* ============ VARDİYA SAYACI ============ */
+// Pazar izinli, 3 haftalık dönen sistem:
+// 13-18 Tem: 08:00-16:00  →  20-25 Tem: 00:00-08:00 (Gece)  →  27 Tem-1 Ağu: 16:00-00:00  →  tekrar 08:00-16:00 ...
+const ANCHOR_MONDAY = new Date(2026, 6, 13); // 13 Temmuz 2026, 08:00-16:00 haftasının Pazartesi'si
+
+const SHIFT_DEFS = [
+  { startH: 8,  startM: 0, endH: 16, endM: 0, label: "08:00 – 16:00" },
+  { startH: 0,  startM: 0, endH: 8,  endM: 0, label: "00:00 – 08:00 (Gece)" },
+  { startH: 16, startM: 0, endH: 24, endM: 0, label: "16:00 – 00:00" },
+];
+
+function getShiftForDate(date) {
+  const dow = date.getDay();
+  if (dow === 0) return null; // Pazar izinli
+  const daysSinceMonday = (dow + 6) % 7;
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysSinceMonday);
+  const weeksSinceAnchor = Math.round((monday - ANCHOR_MONDAY) / (7 * 86400000));
+  const idx = ((weeksSinceAnchor % 3) + 3) % 3;
+  return SHIFT_DEFS[idx];
+}
+
+function computeShiftStatus(now) {
+  let cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  for (let i = 0; i < 21; i++) {
+    const shift = getShiftForDate(cursor);
+    if (shift) {
+      const start = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), shift.startH, shift.startM);
+      const end = shift.endH === 24
+        ? new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1, 0, 0)
+        : new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), shift.endH, shift.endM);
+
+      if (now >= start && now < end) {
+        return { state: 'working', boundary: end, shiftDate: cursor, label: shift.label };
+      }
+      if (now < start) {
+        return { state: 'waiting', boundary: start, shiftDate: cursor, label: shift.label };
+      }
+    }
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+  }
+  return null;
+}
+
+function renderShiftCounter() {
+  const now = new Date();
+  const info = computeShiftStatus(now);
+  if (!info) return;
+
+  const banner = document.getElementById('shift-banner');
+  const statusEl = document.getElementById('shift-status');
+  const subEl = document.getElementById('shift-sub');
+  const countEl = document.getElementById('shift-countdown');
+
+  const totalSec = Math.max(0, Math.floor((info.boundary - now) / 1000));
+  const hh = Math.floor(totalSec / 3600);
+  const mm = Math.floor((totalSec % 3600) / 60);
+  const ss = totalSec % 60;
+  const pad = n => String(n).padStart(2, '0');
+  const isSunday = now.getDay() === 0;
+
+  if (info.state === 'working') {
+    banner.classList.add('working');
+    statusEl.className = 'shift-status working-text';
+    statusEl.textContent = 'Vardiya Başladı 🔥';
+    subEl.innerHTML = `Bitişine kalan &nbsp;·&nbsp; <strong>${info.label}</strong>`;
+  } else {
+    banner.classList.remove('working');
+    statusEl.className = 'shift-status';
+    statusEl.textContent = isSunday ? 'Bugün İzinlisin 🎉 · Vardiya Başlangıcına' : 'Vardiya Başlangıcına';
+    subEl.innerHTML = `${formatDateTR(info.shiftDate)} &nbsp;·&nbsp; <strong>${info.label}</strong>`;
+  }
+
+  countEl.innerHTML = `
+    <div class="scount-box"><span class="scount-val">${pad(hh)}</span><span class="scount-label">Saat</span></div>
+    <div class="scount-sep">:</div>
+    <div class="scount-box"><span class="scount-val">${pad(mm)}</span><span class="scount-label">Dakika</span></div>
+    <div class="scount-sep">:</div>
+    <div class="scount-box"><span class="scount-val">${pad(ss)}</span><span class="scount-label">Saniye</span></div>
+  `;
+}
+
+renderShiftCounter();
+setInterval(renderShiftCounter, 1000);
 
 renderAll();
 
